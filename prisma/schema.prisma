@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Product {
+  id        Int @id @default(autoincrement())
+  sku       String @unique
+  name      String
+  price     Int
+  stock     Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  orderItems OrderItem[]
+}
+
+model Order {
+  id        Int @id @default(autoincrement())
+  status    String
+  total     Int
+  createdAt DateTime @default(now())
+  items     OrderItem[]
+  idempotencyKey String? @unique
+}
+
+model OrderItem {
+  id        Int @id @default(autoincrement())
+  order     Order @relation(fields: [orderId], references: [id])
+  orderId   Int
+  product   Product @relation(fields: [productId], references: [id])
+  productId Int
+  quantity  Int
+  unitPrice Int
+}
+
+model Idempotency {
+  id    Int @id @default(autoincrement())
+  key   String @unique
+  status String
+  response Json?
+  createdAt DateTime @default(now())
+}
