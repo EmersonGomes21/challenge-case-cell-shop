@@ -11,6 +11,8 @@ model Product {
   id        Int @id @default(autoincrement())
   sku       String @unique
   name      String
+  description String?
+  imageUrl   String?
   price     Int
   stock     Int
   createdAt DateTime @default(now())
@@ -18,9 +20,21 @@ model Product {
   orderItems OrderItem[]
 }
 
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+enum IdempotencyStatus {
+  PROCESSING
+  SUCCESS
+  FAILED
+}
+
 model Order {
   id        Int @id @default(autoincrement())
-  status    String
+  status    OrderStatus @default(PENDING)
   total     Int
   createdAt DateTime @default(now())
   items     OrderItem[]
@@ -40,7 +54,17 @@ model OrderItem {
 model Idempotency {
   id    Int @id @default(autoincrement())
   key   String @unique
-  status String
+  status IdempotencyStatus @default(PROCESSING)
   response Json?
   createdAt DateTime @default(now())
+}
+
+model Job {
+  id        Int @id @default(autoincrement())
+  type      String
+  payload   Json
+  status    String @default("pending")
+  attempts  Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
