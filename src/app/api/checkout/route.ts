@@ -73,10 +73,31 @@ export async function POST(req: Request) {
 
     // Use a transaction to decrement stock and create order atomically
     const product = await prisma.product.findUnique({ where: { id: productId } })
-    const unitPrice = product?.price
-    console.info('[checkout] product:lookup', { productId, price: unitPrice, stock: product?.stock })
-    if (!unitPrice) return NextResponse.json({ message: 'Product not found' }, { status: 404 })
+    console.info('[checkout] product:lookup', { productId, price: product?.price, stock: product?.stock })
+    
+    // Validate product exists
+    if (!product) {
+      return NextResponse.json({ message: 'Product not found', code: 'PRODUCT_NOT_FOUND' }, { status: 404 })
+    }
 
+    // Validate stock availability BEFORE transaction (early fail)
+    if (product.stock < quantity) {
+      console.warn('[checkout] stock:insufficient', { productId, available: product.stock, requested: quantity })
+      if (idempotencyKey) {
+        await prisma.idempotency.update({ 
+          where: { key: idempotencyKey }, 
+          data: { status: 'FAILED', response: { message: 'Insufficient stock', code: 'INSUFFICIENT_STOCK', available: product.stock, requested: quantity } } 
+        })
+      }
+      return NextResponse.json({ 
+        message: 'Insufficient stock', 
+        code: 'INSUFFICIENT_STOCK',
+        available: product.stock,
+        requested: quantity
+      }, { status: 409 })
+    }
+
+    const unitPrice = product.price
     console.info('[checkout] transaction:start', { productId, quantity })
     const result = await prisma.$transaction(async (tx) => {
       const updated = await tx.product.updateMany({
@@ -113,10 +134,17 @@ export async function POST(req: Request) {
     console.info('[checkout] transaction:result', { result })
 
     if (result.outOfStock) {
+      console.warn('[checkout] stock:race-condition', { productId, quantity })
       if (idempotencyKey) {
-        await prisma.idempotency.update({ where: { key: idempotencyKey }, data: { status: 'FAILED', response: { message: 'Out of stock' } } })
+        await prisma.idempotency.update({ 
+          where: { key: idempotencyKey }, 
+          data: { status: 'FAILED', response: { message: 'Insufficient stock (sold out)', code: 'INSUFFICIENT_STOCK' } } 
+        })
       }
-      return NextResponse.json({ message: 'Out of stock' }, { status: 409 })
+      return NextResponse.json({ 
+        message: 'Insufficient stock (sold out)',
+        code: 'INSUFFICIENT_STOCK'
+      }, { status: 409 })
     }
 
     // Respond immediately with the created order (ERP processing will continue in background)
