@@ -50,19 +50,11 @@ if [ -f "prisma/schema.prisma" ] || [ -d prisma ]; then
   fi
 
   if [ "$RUN_SEED" = "true" ]; then
-    if [ -f prisma/seed.js ] || [ -f prisma/seed.ts ]; then
+    if [ -f prisma/seed.ts ]; then
       echo "Rodando seed..."
-      # Preferir seed CommonJS se disponível (evita problemas com loaders ESM em runtime)
-      if [ -f prisma/seed.js ]; then
-        node prisma/seed.js || true
-      elif [ -f prisma/seed.ts ]; then
-        # Executar seed TypeScript em modo ESM com ts-node loader (fallback)
-        TS_NODE_TRANSPILE_ONLY=true node --loader ts-node/esm prisma/seed.ts || true
-      else
-        echo "Seed script não encontrado; pulando seed."
-      fi
+      TS_NODE_TRANSPILE_ONLY=true node --loader ts-node/esm prisma/seed.ts || true
     else
-      echo "Nenhum seed detectado; pulando."
+      echo "Seed script não encontrado; pulando seed."
     fi
   else
     echo "Pular seed (RUN_SEED=false)."
