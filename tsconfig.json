@@ -22,8 +22,17 @@
       "@/lib/*": [
         "lib/*"
       ],
+      "@/features/*": [
+        "features/*"
+      ],
       "@/components/*": [
         "components/*"
+      ],
+      "@/types/*": [
+        "types/*"
+      ],
+       "@/styles/*": [
+        "styles/*"
       ],
       "@/store/*": [
         "store/*"

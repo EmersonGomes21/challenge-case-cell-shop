@@ -6,11 +6,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "worker": "node scripts/worker.js",
+    "worker:once": "node scripts/worker.js --once",
     "prisma:migrate": "prisma migrate dev --name init",
     "prisma:seed": "ts-node --transpile-only prisma/seed.ts"
   },
   "dependencies": {
-    "@prisma/client": "^5.17.0",
+    "@prisma/client": "^5.22.0",
     "@radix-ui/react-dialog": "^1.1.15",
     "@tanstack/react-query": "^4.44.0",
     "autoprefixer": "^10.4.0",
@@ -29,7 +31,7 @@
     "@tailwindcss/postcss": "^4.3.0",
     "@types/node": "20.17.6",
     "@types/react": "19.2.16",
-    "prisma": "^5.17.0",
+    "prisma": "^5.22.0",
     "ts-node": "^10.9.1",
     "typescript": "^5.0.0"
   },
