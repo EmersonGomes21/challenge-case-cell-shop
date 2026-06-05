@@ -5,7 +5,7 @@ Projeto de demonstração para um fluxo mínimo de checkout de capinhas de celul
 
 Visão geral
 - **Stack:** Next.js (App Router), React, TypeScript, Prisma, PostgreSQL, Tailwind, Docker
-- **APIs:** listar produtos e criar checkout
+- **APIs:** listar produtos, pedidos e criar checkout e retry
 - **Banco:** Postgres (orquestrado via `docker-compose`)
 
 Pré-requisitos
@@ -128,7 +128,7 @@ O `scripts/worker.js` é um processador de jobs em background que:
   - Latência simulada (2s)
   - Falha temporária aleatória (40% chance) → retry automático (máx 3 tentativas)
   - Falha permanente aleatória (10% chance) → cancela pedido
-  
+
 - **Atualiza estado do pedido**:
   - ✅ Sucesso → `CONFIRMED`
   - ❌ Falha permanente → `CANCELLED`
@@ -155,6 +155,48 @@ node scripts/worker.js
 node scripts/worker.js --once
 ```
 
+### Tela de Produtos e Paginação
+
+A página inicial (`/`) exibe a listagem de produtos disponíveis para compra com suporte a paginação server-side.
+
+#### Funcionalidades
+
+* Exibição dos produtos em layout responsivo utilizando Tailwind CSS.
+* Paginação baseada em parâmetros `page` e `pageSize`.
+* Navegação entre páginas através dos botões **Anterior** e **Próxima**.
+* Seleção dinâmica da quantidade de itens por página (4, 8, 12, 24 ou 48 produtos).
+* Atualização automática da listagem sem recarregar a página utilizando React Query.
+* Indicadores de página atual, total de páginas e quantidade total de produtos cadastrados.
+
+#### API de Produtos
+
+A rota `GET /api/products` suporta os seguintes parâmetros:
+
+```http
+GET /api/products?page=1&pageSize=8
+```
+
+Parâmetros:
+
+| Parâmetro  | Descrição                      | Padrão |
+| ---------- | ------------------------------ | ------ |
+| `page`     | Página atual                   | `1`    |
+| `pageSize` | Quantidade de itens por página | `8`    |
+
+Exemplo de resposta:
+
+```json
+{
+  "items": [...],
+  "page": 1,
+  "pageSize": 8,
+  "total": 25,
+  "totalPages": 4
+}
+```
+
+A paginação é realizada no banco de dados utilizando `skip` e `take` do Prisma, evitando carregar todos os produtos em memória e tornando a solução mais escalável para grandes volumes de dados.
+
 ### Tela de Histórico de Pedidos
 
 Acesse `/orders` para visualizar:
@@ -170,16 +212,200 @@ Acesse `/orders` para visualizar:
 
 A tela faz **polling automático** a cada segundo enquanto o pedido está em `PENDING`, permitindo acompanhamento em tempo real da transição para `CONFIRMED` ou `CANCELLED`.
 
-Observações e troubleshooting
+## Tecnologias Utilizadas e Justificativas
 
-- O entrypoint do `web` tenta executar o `prisma/seed.ts` automaticamente, portanto os dados de seed normalmente são carregados no container sem necessidade de comando manual.
-- Se ver erros relacionados a peer-dependencies durante o build, um workaround rápido é adicionar `--legacy-peer-deps` ao `npm install`. A solução mais sustentável é ajustar as versões no `package.json` e usar o lockfile.
+A escolha da stack priorizou produtividade, simplicidade operacional e aderência aos problemas apresentados no desafio, mantendo uma arquitetura que possa evoluir gradualmente para cenários de maior escala.
 
-Contato / contribuição
+### Frontend
 
-Se quiser, eu posso:
-- gerar e commitar o `package-lock.json` e ajustar o `Dockerfile` para `npm ci`;
-- transformar `node_modules` bind-mount em volume nomeado para evitar colisões entre host e container.
+#### Next.js 15 + React 19
 
-Boa sorte e feliz desenvolvimento!
+O Next.js foi escolhido por oferecer uma estrutura moderna para aplicações Fullstack, permitindo desenvolver frontend e APIs no mesmo projeto.
+
+Principais benefícios:
+
+* Estrutura organizada baseada em rotas.
+* API Routes nativas para o backend do desafio.
+* Excelente experiência de desenvolvimento.
+* Facilidade para futura evolução para SSR, SSG e cache de dados.
+* Redução da complexidade operacional ao concentrar frontend e backend em uma única aplicação.
+
+#### TypeScript
+
+Utilizado para aumentar a segurança do código e reduzir erros em tempo de desenvolvimento.
+
+Benefícios:
+
+* Tipagem forte entre frontend, backend e banco de dados.
+* Melhor manutenção e refatoração.
+* Maior legibilidade e confiabilidade do código.
+
+#### Tailwind CSS 4
+
+Escolhido para acelerar o desenvolvimento da interface sem necessidade de criar uma grande quantidade de CSS customizado.
+
+Benefícios:
+
+* Desenvolvimento rápido de interfaces responsivas.
+* Padronização visual.
+* Menor manutenção de estilos.
+* Excelente integração com componentes React.
+
+#### React Query
+
+Responsável pelo gerenciamento de estado assíncrono e comunicação com APIs.
+
+Benefícios:
+
+* Cache automático.
+* Controle de loading e tratamento de erros.
+* Refetch automático quando necessário.
+* Simplificação da lógica de requisições.
+
+Foi utilizado principalmente nas telas de produtos e histórico de pedidos.
+
+#### React Hook Form + Zod
+
+Utilizados para construção e validação dos formulários.
+
+Benefícios:
+
+* Validação declarativa.
+* Menor quantidade de código.
+* Feedback rápido ao usuário.
+* Reutilização das regras de validação.
+
+### Backend
+
+#### API Routes do Next.js
+
+Para o escopo do desafio, a utilização das API Routes foi suficiente para implementar o backend sem necessidade de criar um serviço separado.
+
+Benefícios:
+
+* Menor complexidade arquitetural.
+* Compartilhamento de tipos com o frontend.
+* Facilidade de manutenção.
+
+---
+
+### Persistência de Dados
+
+#### PostgreSQL
+
+Banco de dados relacional escolhido para armazenar:
+
+* Produtos
+* Pedidos
+* Itens dos pedidos
+* Chaves de idempotência
+* Jobs de processamento
+
+Motivos da escolha:
+
+* Confiabilidade.
+* Suporte a transações.
+* Excelente integração com Prisma.
+* Adequado para cenários de controle de estoque e pedidos.
+
+A escolha também segue a recomendação apresentada no enunciado do desafio.
+
+#### Prisma ORM
+
+Responsável pelo acesso aos dados.
+
+Benefícios:
+
+* Tipagem automática.
+* Migrations versionadas.
+* Produtividade elevada.
+* Facilidade para modelar relacionamentos.
+
+---
+
+### Processamento Assíncrono
+
+#### Worker em Node.js
+
+Foi implementado um worker dedicado para simular o processamento assíncrono do ERP.
+
+Objetivos:
+
+* Evitar que o checkout dependa diretamente da disponibilidade do ERP.
+* Simular falhas temporárias e permanentes.
+* Implementar retentativas automáticas.
+* Demonstrar resiliência do fluxo de pedidos.
+
+O worker processa jobs armazenados em banco e atualiza o estado dos pedidos conforme o resultado do processamento.
+
+#### Fila Persistida em PostgreSQL
+
+Para manter o escopo controlado, foi utilizada uma fila baseada em tabela de banco de dados.
+
+Benefícios:
+
+* Persistência dos jobs.
+* Simplicidade operacional.
+* Fácil entendimento para avaliação técnica.
+* Suporte a retry e reprocessamento.
+
+Em um ambiente de produção, uma evolução natural seria a adoção de BullMQ + Redis ou RabbitMQ.
+
+---
+
+### Infraestrutura
+
+#### Docker + Docker Compose
+
+Toda a aplicação foi preparada para execução via containers.
+
+Benefícios:
+
+* Ambiente reproduzível.
+* Facilidade de configuração.
+* Eliminação de diferenças entre máquinas de desenvolvimento.
+* Simplificação da execução do PostgreSQL e da aplicação.
+
+---
+
+### Bibliotecas Auxiliares
+
+#### UUID
+
+Utilizado para geração de chaves de idempotência e identificadores únicos.
+
+#### Lucide React
+
+Biblioteca de ícones utilizada na interface por possuir:
+
+* Boa performance.
+* API simples.
+* Compatibilidade com React.
+* Visual moderno e consistente.
+
+#### Radix UI
+
+Utilizado para componentes acessíveis e reutilizáveis.
+
+Benefícios:
+
+* Acessibilidade nativa.
+* Componentes desacoplados de estilo.
+* Integração simples com Tailwind CSS.
+
+---
+
+### Considerações Arquiteturais
+
+O foco da solução foi demonstrar os principais conceitos exigidos pelo desafio:
+
+* Controle de estoque consistente.
+* Idempotência.
+* Processamento assíncrono.
+* Resiliência diante de falhas do ERP.
+* Separação entre jornada do cliente e processamento interno.
+* Evolução incremental da arquitetura sem necessidade de reescrever o ERP.
+
+A implementação prioriza clareza, simplicidade e possibilidade de evolução futura para arquiteturas distribuídas de maior escala.
+
 
