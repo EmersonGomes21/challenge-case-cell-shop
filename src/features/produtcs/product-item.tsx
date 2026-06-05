@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import CheckoutForm from '../../components/CheckoutForm'
+import CheckoutForm from '@/components/checkout-form'
 import { Product } from '@/types/product'
 
 export  function ProductCardItem({ product }: { product: Product }) {
@@ -41,7 +41,10 @@ export  function ProductCardItem({ product }: { product: Product }) {
       <div className="p-6 flex-1 flex flex-col justify-between">
         <div>
           <h2 className="text-center font-semibold text-lg mb-2">{product.name}</h2>
-          <p className="text-center text-sm text-gray-600 mb-4">{product.description}</p>
+          <p className="text-center text-sm text-gray-600 ">{product.description}</p>
+        <p className="text-center text-sm text-zinc-500 mt-2 mb-4">
+              sku: {product.sku.toLowerCase()}
+            </p>
         </div>
 
         <div className="text-center">

@@ -1,10 +1,10 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
+import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { v4 as uuidv4 } from 'uuid'
 import { ShoppingCart } from 'lucide-react'
-import Modal from './_Modal'
-import StatusBadge from './StatusBadge'
+import Modal from './modal'
+import StatusBadge from './status-badge'
 import { Product } from '@/types/product'
 
 type OrderItemView = { productId: number; name?: string | null; sku?: string | null; quantity: number; unitPrice: number; lineTotal?: number }
@@ -14,12 +14,8 @@ export default function CheckoutForm({ product, quantity }: { product: Product, 
   const [modalOpen, setModalOpen] = useState(false)
   const [modalData, setModalData] = useState<ModalData | null>(null)
   const queryClient = useQueryClient()
-  const abortRef = useRef(false)
-console.log("CheckoutForm render", { product, quantity })
-console.log("modalData render", modalData)
-  useEffect(() => {
-    return () => { abortRef.current = true }
-  }, [])
+  console.log("CheckoutForm render", { product, quantity })
+  console.log("modalData render", modalData)
 
   const mutation = useMutation(async (payload: any) => {
     const res = await fetch('/api/checkout', {
@@ -41,24 +37,30 @@ console.log("modalData render", modalData)
     }
   })
 
-  async function pollOrder(orderId: number, timeout = 15000) {
-    const start = Date.now()
-    // initial set to pending
-    while (!abortRef.current && Date.now() - start < timeout) {
-      try {
-        const r = await fetch(`/api/orders/${orderId}`)
-        if (r.ok) {
-          const j = await r.json()
-          setModalData((prev) => ({ ...(prev ?? {}), ...j }))
-          if (j.status && j.status !== 'PENDING') return j
-        }
-      } catch (e) {
-        // ignore transient errors
+  // use react-query to poll the order status only when we have an orderId
+  const orderId = modalData?.orderId
+  useQuery(
+    ['orders', orderId],
+    async () => {
+      const res = await fetch(`/api/orders/${orderId}`)
+      if (!res.ok) {
+        const body = await res.json().catch(() => null)
+        const err = new Error(body?.message || 'Erro ao buscar pedido') as any
+        err.status = res.status
+        throw err
       }
-      await new Promise((r) => setTimeout(r, 1000))
+      return res.json()
+    },
+    {
+      enabled: Boolean(orderId),
+      refetchInterval: (data: any) => (data && data.status === 'PENDING' ? 1000 : false),
+      refetchOnWindowFocus: false,
+      retry: false,
+      onSuccess: (data: any) => {
+        setModalData((prev) => ({ ...(prev ?? {}), ...data }))
+      },
     }
-    return null
-  }
+  )
 
   const onBuy = async () => {
     setModalData(null)
@@ -78,15 +80,11 @@ console.log("modalData render", modalData)
           lineTotal: it.unitPrice * it.quantity,
         }))
         setModalData({ orderId: ord.id, status: resp.status ?? ord.status, total: ord.total, items })
-        if ((resp.status === 'PENDING' || ord.status === 'PENDING') && ord.id) {
-          await pollOrder(ord.id)
-        }
+        // react-query will start polling because orderId now exists
       } else {
         // legacy response
         setModalData({ orderId: resp.orderId, status: resp.status })
-        if (resp.status === 'PENDING' && resp.orderId) {
-          await pollOrder(resp.orderId)
-        }
+        // react-query will start polling because orderId now exists
       }
     } catch (err: any) {
       // show error in modal
@@ -113,7 +111,7 @@ console.log("modalData render", modalData)
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                   <StatusBadge status={modalData.status} />
+                   <StatusBadge status={modalData.status} isLoading={modalData.status === 'PENDING'} />
                 </div>
                
               </div>

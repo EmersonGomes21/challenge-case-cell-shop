@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Order } from '@/types/order'
 import { OrderCard } from '@/features/orders/components/orders-card'
-import { ArrowBigLeft, ArrowLeftSquare } from 'lucide-react'
+import {  ArrowLeftSquare } from 'lucide-react'
 import Link from 'next/link'
 
 
@@ -21,6 +21,12 @@ export default function OrdersPage() {
   const { data, isLoading, error } = useQuery<Order[], Error>({
     queryKey: ['orders'],
     queryFn: () => fetcher('/api/orders'),
+    refetchInterval(data, query) {
+      if (data?.some(order => order.status === 'PENDING')) {
+        return 4000
+      }
+      return false
+    },
   })
 
   if (isLoading) {
@@ -49,12 +55,17 @@ export default function OrdersPage() {
       </h1>
 
       <div className="space-y-5">
-        {data?.map((order) => (
-          <OrderCard
-            key={order.id}
-            order={order}
+        { data.length === 0 ? (
+          <div className="p-6 text-center text-gray-600">
+            Nenhum pedido encontrado.
+          </div>
+        ) : (
+          data.map((order) => (
+            <OrderCard
+              key={order.id}
+                order={order}
           />
-        ))}
+        )))}
       </div>
     </main>
   )

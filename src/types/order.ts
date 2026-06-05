@@ -1,6 +1,6 @@
 export interface Order {
   id: number
-  status: 'PENDING' | 'CONFIRMED' | 'FAILED'
+  status: 'PENDING' | 'CONFIRMED' | 'CANCELLED'
   total: number
   createdAt: string
   idempotencyKey: string

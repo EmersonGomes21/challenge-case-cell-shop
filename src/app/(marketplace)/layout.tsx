@@ -1,7 +1,7 @@
 import '@/styles/globals.css'
 import { ReactNode } from 'react'
 import Providers from '../../providers/Providers'
-import { Header } from '@/components/Header'
+import { Header } from '@/components/header'
 
 export const metadata = {
   title: 'CaseCellShop',

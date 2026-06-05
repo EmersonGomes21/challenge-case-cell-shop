@@ -1,12 +1,26 @@
 import { NextResponse } from 'next/server'
 import prisma from '../../../lib/prisma'
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 
 const bodySchema = z.object({
   productId: z.number().int().positive(),
   quantity: z.number().int().positive(),
   idempotencyKey: z.string().optional(),
 })
+
+function serializeError(e: any) {
+  if (!e) return { message: String(e) }
+  const result: any = { message: e.message ?? String(e), name: e.name, stack: e.stack }
+  if (typeof e === 'object' && e !== null) {
+    for (const k of Object.getOwnPropertyNames(e)) {
+      if (!(k in result)) {
+        try { result[k] = (e as any)[k] } catch (__) {}
+      }
+    }
+  }
+  return result
+}
 
 function randomDelay(msMin = 200, msMax = 1500) {
   const ms = Math.floor(Math.random() * (msMax - msMin + 1)) + msMin
@@ -39,69 +53,80 @@ export async function POST(req: Request) {
     }
     const { productId, quantity, idempotencyKey } = parsed.data
 
-    // Idempotency check
+    console.info('[checkout] start', { productId, quantity, idempotencyKey })
+
+    // Idempotency check and register processing state
     if (idempotencyKey) {
+      console.info('[checkout] idempotency:check', { idempotencyKey })
       const existing = await prisma.idempotency.findUnique({ where: { key: idempotencyKey } })
+      console.info('[checkout] idempotency:found', { found: !!existing })
       if (existing) {
-        if (existing.status === 'success') return NextResponse.json(existing.response)
-        if (existing.status === 'processing') return NextResponse.json({ message: 'Processing' }, { status: 202 })
+        if (existing.status === 'SUCCESS') return NextResponse.json(existing.response)
+        if (existing.status === 'PROCESSING') return NextResponse.json({ message: 'Processing' }, { status: 202 })
         // else continue to attempt
       } else {
-        await prisma.idempotency.create({ data: { key: idempotencyKey, status: 'processing' } })
+        console.info('[checkout] idempotency:create', { idempotencyKey })
+        await prisma.idempotency.create({ data: { key: idempotencyKey, status: 'PROCESSING' } })
+        console.info('[checkout] idempotency:created', { idempotencyKey })
       }
     }
 
-    // Try to decrement stock atomically
-    const updated = await prisma.product.updateMany({
-      where: { id: productId, stock: { gte: quantity } },
-      data: { stock: { decrement: quantity } }
+    // Use a transaction to decrement stock and create order atomically
+    const product = await prisma.product.findUnique({ where: { id: productId } })
+    const unitPrice = product?.price
+    console.info('[checkout] product:lookup', { productId, price: unitPrice, stock: product?.stock })
+    if (!unitPrice) return NextResponse.json({ message: 'Product not found' }, { status: 404 })
+
+    console.info('[checkout] transaction:start', { productId, quantity })
+    const result = await prisma.$transaction(async (tx) => {
+      const updated = await tx.product.updateMany({
+        where: { id: productId, stock: { gte: quantity } },
+        data: { stock: { decrement: quantity } }
+      })
+      if (updated.count === 0) return { outOfStock: true }
+
+      const order = await tx.order.create({
+        data: {
+          status: 'PENDING',
+          total: 0,
+          items: { create: { productId, quantity, unitPrice } },
+          idempotencyKey: idempotencyKey ?? undefined,
+        },
+        include: { items: true }
+      })
+
+      const total = order.items.reduce((s, it) => s + it.quantity * it.unitPrice, 0)
+
+      // update order with computed total and return the order including product data
+      const updatedOrder = await tx.order.update({
+        where: { id: order.id },
+        data: { total },
+        include: { items: { include: { product: true } } }
+      })
+
+      // enqueue background job for ERP processing
+      await tx.job.create({ data: { type: 'PROCESS_ERP', payload: { orderId: order.id, idempotencyKey } } })
+
+      return { outOfStock: false, order: updatedOrder }
     })
 
-    if (updated.count === 0) {
+    console.info('[checkout] transaction:result', { result })
+
+    if (result.outOfStock) {
       if (idempotencyKey) {
-        await prisma.idempotency.update({ where: { key: idempotencyKey }, data: { status: 'failed', response: { message: 'Out of stock' } } })
+        await prisma.idempotency.update({ where: { key: idempotencyKey }, data: { status: 'FAILED', response: { message: 'Out of stock' } } })
       }
       return NextResponse.json({ message: 'Out of stock' }, { status: 409 })
     }
 
-    // create order
-    const unitPrice = (await prisma.product.findUnique({ where: { id: productId } }))!.price
-    const order = await prisma.order.create({
-      data: {
-        status: 'pending',
-        total: 0,
-        items: {
-          create: { productId, quantity, unitPrice }
-        }
-      },
-      include: { items: true }
-    })
-    // compute total
-    const total = order.items.reduce((s, it) => s + it.quantity * it.unitPrice, 0)
-    await prisma.order.update({ where: { id: order.id }, data: { total } })
-
-    // simulate ERP
-    try {
-      await simulateErp()
-      await prisma.order.update({ where: { id: order.id }, data: { status: 'confirmed', idempotencyKey } })
-      if (idempotencyKey) {
-        await prisma.idempotency.update({ where: { key: idempotencyKey }, data: { status: 'success', response: { orderId: order.id, status: 'confirmed' } } })
-      }
-      return NextResponse.json({ orderId: order.id, status: 'confirmed' })
-    } catch (erpErr: any) {
-      // rollback stock and cancel order
-      await prisma.product.update({ where: { id: productId }, data: { stock: { increment: quantity } } })
-      await prisma.order.update({ where: { id: order.id }, data: { status: 'cancelled' } })
-      if (idempotencyKey) {
-        await prisma.idempotency.update({ where: { key: idempotencyKey }, data: { status: 'failed', response: { message: 'ERP error' } } })
-      }
-      if (erpErr.temporary) {
-        return NextResponse.json({ message: 'Temporary ERP failure' }, { status: 503 })
-      }
-      return NextResponse.json({ message: 'ERP failure' }, { status: 500 })
-    }
-  } catch (e) {
+    // Respond immediately with the created order (ERP processing will continue in background)
+    return NextResponse.json({ order: result.order, status: 'PENDING' }, { status: 202 })
+  } catch (e: any) {
     console.error(e)
+    const dev = process.env.NODE_ENV !== 'production'
+    if (dev) {
+      return NextResponse.json({ message: 'Internal error', error: e?.message ?? String(e), stack: e?.stack }, { status: 500 })
+    }
     return NextResponse.json({ message: 'Internal error' }, { status: 500 })
   }
 }

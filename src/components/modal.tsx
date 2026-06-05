@@ -24,7 +24,7 @@ export default function Modal({ open, onClose, title, children }: { open: boolea
             </div>
 
             <div className="mt-6 flex justify-between">
-              <Link href="/" className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2">Ir para pedidos</Link>
+              <Link href="/orders" className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2">Ir para pedidos</Link>
               <Dialog.Close asChild>
                 <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2">Continuar comprando</button>
               </Dialog.Close>
